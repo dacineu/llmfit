@@ -197,16 +197,16 @@ impl SystemSpecs {
             }
         }
 
-        // Intel Arc via sysfs
-        if let Some(vram) = Self::detect_intel_gpu() {
+        // Intel GPUs (Arc discrete, UHD/HD/Iris/Xe integrated) via sysfs
+        if let Some((name, vram, is_unified)) = Self::detect_intel_gpu(total_ram_gb) {
             let already_found = gpus.iter().any(|g| g.name.to_lowercase().contains("intel"));
             if !already_found {
                 gpus.push(GpuInfo {
-                    name: "Intel Arc".to_string(),
+                    name,
                     vram_gb: Some(vram),
                     backend: GpuBackend::Sycl,
                     count: 1,
-                    unified_memory: false,
+                    unified_memory: is_unified,
                 });
             }
         }
@@ -929,11 +929,14 @@ impl SystemSpecs {
         }
     }
 
-    /// Detect Intel Arc / Intel integrated GPU via sysfs or lspci.
+    /// Detect Intel GPUs (Arc discrete, UHD/HD/Iris/Xe integrated) via sysfs or lspci.
     /// Intel Arc GPUs (A370M, A770, etc.) have dedicated VRAM exposed via
-    /// the DRM subsystem at /sys/class/drm/card*/device/. Even integrated
-    /// Intel GPUs that share system RAM are useful for inference via SYCL/oneAPI.
-    fn detect_intel_gpu() -> Option<f64> {
+    /// the DRM subsystem at /sys/class/drm/card*/device/. Integrated Intel GPUs
+    /// (UHD, HD, Iris, Xe) share system RAM via GTT and are useful for inference
+    /// via SYCL/oneAPI or Vulkan.
+    ///
+    /// Returns: (GPU name, VRAM in GB, is_unified_memory)
+    fn detect_intel_gpu(total_ram_gb: f64) -> Option<(String, f64, bool)> {
         // Try sysfs first: works for Intel discrete (Arc) GPUs on Linux.
         // Walk /sys/class/drm/card*/device/ looking for Intel vendor ID (0x8086).
         if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
@@ -949,6 +952,12 @@ impl SystemSpecs {
                     continue;
                 }
 
+                // Try to get the GPU name from device info
+                let mut gpu_name = None;
+                if let Ok(device_str) = std::fs::read_to_string(&device_path.join("device")) {
+                    gpu_name = Some(Self::intel_device_name_from_id(&device_str.trim()));
+                }
+
                 // Look for total VRAM via DRM memory info
                 // Intel discrete GPUs expose this under drm/card*/device/mem_info_vram_total
                 let vram_path = card_path.join("device/mem_info_vram_total");
@@ -957,37 +966,114 @@ impl SystemSpecs {
                     && vram_bytes > 0
                 {
                     let vram_gb = vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-                    return Some(vram_gb);
+                    let name = gpu_name.unwrap_or_else(|| "Intel Arc".to_string());
+                    return Some((name, vram_gb, false));
                 }
 
-                // For integrated Intel GPUs, check if it's an Arc-class device
-                // by looking for "Arc" in the device name via lspci
+                // For integrated Intel GPUs, check device type via lspci
                 if let Some(text) = Self::lspci_output() {
                     for line in text.lines() {
                         let lower = line.to_lowercase();
-                        if lower.contains("intel") && lower.contains("arc") {
+                        if lower.contains("intel") {
                             // Intel Arc integrated (e.g. Arc Graphics in Meteor Lake)
-                            // These share system RAM; report None for VRAM and
-                            // let the caller know a GPU exists.
-                            return Some(0.0);
+                            if lower.contains("arc") {
+                                let name = gpu_name.unwrap_or_else(|| "Intel Arc Graphics".to_string());
+                                // Intel Arc iGPUs use unified memory - estimate ~50-75% of system RAM
+                                let estimated_vram = total_ram_gb * 0.5;
+                                return Some((name, estimated_vram, true));
+                            }
+                            // Intel UHD/HD/Iris/Xe integrated graphics
+                            if lower.contains("uhd") || lower.contains("hd graphics")
+                                || lower.contains("iris") || lower.contains("xe")
+                                || lower.contains("graphics") {
+                                let name = gpu_name.unwrap_or_else(|| {
+                                    if lower.contains("uhd") {
+                                        "Intel UHD Graphics".to_string()
+                                    } else if lower.contains("iris") {
+                                        "Intel Iris Graphics".to_string()
+                                    } else if lower.contains("xe") {
+                                        "Intel Xe Graphics".to_string()
+                                    } else {
+                                        "Intel HD Graphics".to_string()
+                                    }
+                                });
+                                // Integrated Intel GPUs share system RAM via GTT
+                                // Typically use 50% of system RAM for graphics
+                                let estimated_vram = total_ram_gb * 0.5;
+                                return Some((name, estimated_vram, true));
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Fallback: check lspci directly for Intel Arc devices
-        // (covers cases where sysfs isn't available or card dirs don't exist)
+        // Fallback: check lspci directly for Intel GPUs
         if let Some(text) = Self::lspci_output() {
             for line in text.lines() {
                 let lower = line.to_lowercase();
-                if lower.contains("intel") && lower.contains("arc") {
-                    return Some(0.0);
+                if lower.contains("intel") && lower.contains("vga") {
+                    if lower.contains("uhd") {
+                        return Some(("Intel UHD Graphics".to_string(), total_ram_gb * 0.5, true));
+                    } else if lower.contains("iris") {
+                        return Some(("Intel Iris Graphics".to_string(), total_ram_gb * 0.5, true));
+                    } else if lower.contains("xe") {
+                        return Some(("Intel Xe Graphics".to_string(), total_ram_gb * 0.5, true));
+                    } else if lower.contains("hd") && lower.contains("graphics") {
+                        return Some(("Intel HD Graphics".to_string(), total_ram_gb * 0.5, true));
+                    } else if lower.contains("arc") {
+                        return Some(("Intel Arc Graphics".to_string(), total_ram_gb * 0.5, true));
+                    }
                 }
             }
         }
 
         None
+    }
+
+    /// Convert Intel PCI device ID to readable name (common IDs)
+    fn intel_device_name_from_id(device_id: &str) -> String {
+        // Remove 0x prefix if present
+        let id = device_id.trim_start_matches("0x").to_lowercase();
+        match id.as_str() {
+            // Arc (Alchemist) - DG2
+            "56a0" | "56a1" | "56a3" | "56a4" | "56a5" | "56a6" => "Intel Arc A770".to_string(),
+            "5690" | "5691" | "5692" => "Intel Arc A750".to_string(),
+            "56a2" => "Intel Arc A580".to_string(),
+            "5693" | "5694" | "5695" => "Intel Arc A380".to_string(),
+            "5696" | "5697" => "Intel Arc A310".to_string(),
+            // Tiger Lake (11th Gen) - Gen12 Xe
+            "9a40" | "9a49" => "Intel UHD Graphics Xe".to_string(),
+            "9a78" | "9a60" | "9a68" | "9a70" => "Intel UHD Graphics".to_string(),
+            // Rocket Lake (11th Gen Desktop)
+            "4c8a" | "4c8b" | "4c8c" | "4c90" => "Intel UHD Graphics P750".to_string(),
+            // Comet Lake (10th Gen)
+            "9b41" | "9bca" | "9bcb" | "9bcc" => "Intel UHD Graphics 620".to_string(),
+            "9b21" | "9baa" | "9bab" | "9bac" => "Intel UHD Graphics 630".to_string(),
+            // Ice Lake (10th Gen Mobile)
+            "8a50" | "8a51" | "8a52" | "8a53" | "8a54" => "Intel Iris Plus Graphics G7".to_string(),
+            "8a56" | "8a57" | "8a58" | "8a59" => "Intel Iris Plus Graphics G4".to_string(),
+            // Coffee Lake (9th Gen)
+            "3e90" | "3e91" | "3e92" | "3e93" => "Intel UHD Graphics 630".to_string(),
+            "3e9b" => "Intel UHD Graphics P630".to_string(),
+            // Kaby Lake (8th Gen)
+            "5912" | "5916" | "591b" => "Intel HD Graphics 630".to_string(),
+            "591e" | "591c" => "Intel HD Graphics 615".to_string(),
+            // Alder Lake (12th Gen) - Gen12.2
+            "4680" | "4682" | "4688" | "468a" => "Intel UHD Graphics 770".to_string(),
+            "4690" | "4692" | "4693" => "Intel UHD Graphics 730".to_string(),
+            // Raptor Lake (13th Gen)
+            "a780" | "a782" | "a788" => "Intel UHD Graphics 770".to_string(),
+            "a7a0" | "a7a8" => "Intel UHD Graphics 730".to_string(),
+            // Meteor Lake (14th Gen) - Arc
+            "7d55" | "7dd5" => "Intel Arc Graphics".to_string(),
+            "7d45" => "Intel Graphics".to_string(),
+            // Lunar Lake (15th Gen)
+            "e020" | "e021" | "e022" => "Intel Arc Graphics 130V".to_string(),
+            "b080" | "b081" | "b082" => "Intel Arc Graphics 140V".to_string(),
+            // Default: use lspci name if available
+            _ => "Intel Graphics".to_string(),
+        }
     }
 
     /// Detect Apple Silicon GPU via system_profiler.

@@ -135,6 +135,12 @@ jobs:
         with:
           path: artifacts
 
+      - name: Download Debian artifact
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: llmfit-deb
+          path: debian-artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
@@ -143,6 +149,74 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
             artifacts/**/*.sha256
+            debian-artifacts/*.deb
+            debian-artifacts/*.sha256
+
+  build-deb:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: llmfit-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+          path: linux-artifact
+
+      - name: Build Debian package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p debian-pkg/DEBIAN
+          mkdir -p debian-pkg/usr/bin
+          mkdir -p debian-pkg/usr/share/doc/llmfit
+          mkdir -p debian-pkg/usr/share/licenses/llmfit
+          mkdir -p debian-pkg/usr/share/man/man1
+
+          # Extract binary from tarball
+          tar xzf linux-artifact/*.tar.gz -C /tmp/
+          cp /tmp/llmfit-*/llmfit debian-pkg/usr/bin/
+          chmod 755 debian-pkg/usr/bin/llmfit
+
+          cp README.md debian-pkg/usr/share/doc/llmfit/
+          cp LICENSE debian-pkg/usr/share/licenses/llmfit/
+
+          # Calculate installed size
+          INSTALLED_SIZE=$(du -sk debian-pkg/usr | cut -f1)
+
+          cat > debian-pkg/DEBIAN/control << EOF
+          Package: llmfit
+          Version: ${VERSION}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Installed-Size: ${INSTALLED_SIZE}
+          Depends: libc6
+          Maintainer: Alex Jones <alex@example.com>
+          Description: Right-size LLM models to your system hardware
+           llmfit is a terminal tool that right-sizes LLM models to your system's
+           RAM, CPU, and GPU. Detects your hardware, scores each model across
+           quality, speed, fit, and context dimensions, and tells you which ones
+           will actually run well on your machine.
+          EOF
+
+          # Fix indentation
+          sed -i 's/^          //' debian-pkg/DEBIAN/control
+
+          # Build .deb
+          dpkg-deb --root-owner-group --build debian-pkg "llmfit_${VERSION}_amd64.deb"
+
+          # Create checksum
+          sha256sum "llmfit_${VERSION}_amd64.deb" > "llmfit_${VERSION}_amd64.deb.sha256"
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: llmfit-deb
+          path: |
+            llmfit_*.deb
+            llmfit_*.sha256
 
   publish-crate:
     needs: release
