@@ -24,21 +24,8 @@ Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-G
 
 ## Install
 
-### Windows
+### Quick Install (macOS / Linux)
 ```sh
-scoop install llmfit
-```
-
-If Scoop is not installed, follow the [Scoop installation guide](https://scoop.sh/).
-
-### macOS / Linux
-
-#### Homebrew
-```sh
-brew install llmfit
-```
-
-#### Quick install
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dacineu/llmfit/main/install.sh | sh
 ```
@@ -52,11 +39,11 @@ curl -fsSL https://raw.githubusercontent.com/dacineu/llmfit/main/install.sh | sh
 
 ### Docker / Podman
 ```sh
-docker run ghcr.io/dacineu/llmfit
+docker run ghcr.io/dacineu/llmfit:latest
 ```
 This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
 ```
-podman run ghcr.io/dacineu/llmfit recommend --use-case coding | jq '.models[].name'
+podman run ghcr.io/dacineu/llmfit:latest recommend --use-case coding | jq '.models[].name'
 ```
 
 ### From source

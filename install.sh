@@ -1,6 +1,6 @@
 #!/bin/sh
-# llmfit installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/AlexsJones/llmfit/main/install.sh | sh
+# llmfit installer (dacineu fork)
+# Usage: curl -fsSL https://raw.githubusercontent.com/dacineu/llmfit/main/install.sh | sh
 #        curl -fsSL ... | sh -s -- --local   # Install to ~/.local/bin (no sudo)
 #
 # Downloads the latest llmfit release from GitHub and installs
@@ -9,7 +9,7 @@
 
 set -e
 
-REPO="AlexsJones/llmfit"
+REPO="dacineu/llmfit"
 BINARY="llmfit"
 LOCAL_INSTALL=""
 
