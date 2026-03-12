@@ -1,13 +1,14 @@
-# llmfit
+# llmfit (dacineu fork)
 
 <p align="center">
   <img src="assets/icon.svg" alt="llmfit icon" width="128" height="128">
 </p>
 <p align="center">
-  <a href="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml"><img src="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://crates.io/crates/llmfit"><img src="https://img.shields.io/crates/v/llmfit.svg" alt="Crates.io"></a>
+  <a href="https://github.com/dacineu/llmfit/actions/workflows/ci.yml"><img src="https://github.com/dacineu/llmfit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
+
+> **Note:** This is a fork of the original [llmfit by AlexsJones](https://github.com/AlexsJones/llmfit).
 
 **Hundreds of models & providers. One command to find what runs on your hardware.**
 
@@ -15,7 +16,7 @@ A terminal tool that right-sizes LLM models to your system's RAM, CPU, and GPU. 
 
 Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-GPU setups, MoE architectures, dynamic quantization selection, speed estimation, and local runtime providers (Ollama, llama.cpp, MLX).
 
-> **Sister project:** Check out [sympozium](https://github.com/AlexsJones/sympozium/) for managing agents in Kubernetes.
+> **Original project:** This fork is based on [llmfit by AlexsJones](https://github.com/AlexsJones/llmfit).
 
 ![demo](demo.gif)
 
@@ -39,28 +40,28 @@ brew install llmfit
 
 #### Quick install
 ```sh
-curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dacineu/llmfit/main/install.sh | sh
 ```
 
 Downloads the latest release binary from GitHub and installs it to `/usr/local/bin` (or `~/.local/bin` if no sudo).
 
 **Install to `~/.local/bin` without sudo:**
 ```sh
-curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+curl -fsSL https://raw.githubusercontent.com/dacineu/llmfit/main/install.sh | sh -s -- --local
 ```
 
 ### Docker / Podman
 ```sh
-docker run ghcr.io/alexsjones/llmfit
+docker run ghcr.io/dacineu/llmfit
 ```
 This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
 ```
-podman run ghcr.io/alexsjones/llmfit recommend --use-case coding | jq '.models[].name'
+podman run ghcr.io/dacineu/llmfit recommend --use-case coding | jq '.models[].name'
 ```
 
 ### From source
 ```sh
-git clone https://github.com/AlexsJones/llmfit.git
+git clone https://github.com/dacineu/llmfit.git
 cd llmfit
 cargo build --release
 # binary is at target/release/llmfit
@@ -388,18 +389,17 @@ Makefile           -- Build and maintenance commands
 
 ---
 
-## Publishing to crates.io
+## Publishing
 
-The `Cargo.toml` already includes the required metadata (description, license, repository). To publish:
+This fork is not published to crates.io. To use this fork, build from source:
 
 ```sh
-# Dry run first to catch issues
-cargo publish --dry-run
-
-# Publish for real (requires a crates.io API token)
-cargo login
-cargo publish
+git clone https://github.com/dacineu/llmfit.git
+cd llmfit
+cargo build --release
 ```
+
+The binary will be at `target/release/llmfit`.
 
 Before publishing, make sure:
 
@@ -418,9 +418,9 @@ curl -sL https://opensource.org/license/MIT -o LICENSE
 To publish updates:
 
 ```sh
-# Bump version
-# Edit Cargo.toml: version = "0.2.0"
-cargo publish
+# Build release binary
+cargo build --release
+# Binary is at target/release/llmfit
 ```
 
 ---
@@ -534,7 +534,9 @@ If autodetection fails or reports incorrect values, use `--memory=<SIZE>` to ove
 
 ## Contributing
 
-Contributions are welcome, especially new models.
+Contributions are welcome! Please submit pull requests to this fork at `dacineu/llmfit`.
+
+**Note:** For contributions to the original project, please visit [AlexsJones/llmfit](https://github.com/AlexsJones/llmfit).
 
 ### Adding a model
 
@@ -553,17 +555,19 @@ See [MODELS.md](MODELS.md) for the current list and [AGENTS.md](AGENTS.md) for a
 
 ---
 
-## OpenClaw integration
+## OpenClaw Integration (Original)
 
-llmfit ships as an [OpenClaw](https://github.com/openclaw/openclaw) skill that lets the agent recommend hardware-appropriate local models and auto-configure Ollama/vLLM/LM Studio providers.
+The original llmfit ships as an [OpenClaw](https://github.com/openclaw/openclaw) skill. This fork may not include the OpenClaw skill integration.
 
-### Install the skill
+### Install the skill (Original Repo)
 
 ```sh
-# From the llmfit repo
+# From the original llmfit repo by AlexsJones
+git clone https://github.com/AlexsJones/llmfit.git
+cd llmfit
 ./scripts/install-openclaw-skill.sh
 
-# Or manually
+# Or manually from the original repo
 cp -r skills/llmfit-advisor ~/.openclaw/skills/
 ```
 
@@ -590,10 +594,13 @@ See [skills/llmfit-advisor/SKILL.md](skills/llmfit-advisor/SKILL.md) for the ful
 
 ## Alternatives
 
-If you're looking for a different approach, check out [llm-checker](https://github.com/Pavelevich/llm-checker) -- a Node.js CLI tool with Ollama integration that can pull and benchmark models directly. It takes a more hands-on approach by actually running models on your hardware via Ollama, rather than estimating from specs. Good if you already have Ollama installed and want to test real-world performance. Note that it doesn't support MoE (Mixture-of-Experts) architectures -- all models are treated as dense, so memory estimates for models like Mixtral or DeepSeek-V3 will reflect total parameter count rather than the smaller active subset.
+- **[llm-checker](https://github.com/Pavelevich/llm-checker)** -- A Node.js CLI tool with Ollama integration that can pull and benchmark models directly.
+- **[Original llmfit](https://github.com/AlexsJones/llmfit)** -- The upstream project this fork is based on.
 
 ---
 
 ## License
 
-MIT
+MIT - See [LICENSE](LICENSE) for details.
+
+This fork maintains the same license as the [original project](https://github.com/AlexsJones/llmfit).
